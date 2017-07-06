@@ -2,13 +2,13 @@
 <configuration status="OFF">
 	<Properties>
 		<Property name="date">%d{yyyy-MM-dd HH:mm:ss.SSS}</Property>
-		<Property name="daily_log">log/application_%d{yyyy-MM-dd}.log</Property>
+		<Property name="daily_log">log/photography_%d{yyyy-MM-dd}.log</Property>
 	</Properties>
 	<appenders>
 		<Console name="Console" target="SYSTEM_OUT">
 			<PatternLayout pattern="${date} [ %-5level ] %logger{10} - %msg %n" />
 		</Console>
-		<RollingFile name="File" fileName="log/application.log" filePattern="${daily_log}.zip">
+		<RollingFile name="File" fileName="log/photography.log" filePattern="${daily_log}.zip">
 			<PatternLayout pattern="${date} [ %-5level ] %logger{10} - %msg %n" />
 			<Policies>
 				<TimeBasedTriggeringPolicy />

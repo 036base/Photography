@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<project name="Processing" basedir="." default="mycoloring">
+	<!-- Mainクラス -->
+	<property name="main" value="com.awesomebase.photography.google.FileDownload" />
+
+	<!-- カレントディレクトリ -->
+	<property name="base.dir" value="." />
+
+	<!-- 参照ライブラリファイルのディレクトリ -->
+	<property name="build.lib" value="lib" />
+
+	<!-- クラスファイルのディレクトリ -->
+	<property name="build.class" value="bin" />
+
+	<!-- Jarファイル名 -->
+	<property name="build.jar" value="build/FileDownload.jar" />
+
+	<!--クラスパス（コンパイル時にも利用） -->
+	<path id="classpath">
+		<fileset id="class" dir="${build.lib}">
+			<include name="*.jar" />
+		</fileset>
+	</path>
+
+	<!-- 実行可能JarファイルのClass-Path -->
+
+	<!-- 1.カレントディレクトリの絶対パス取得 -->
+	<pathconvert property="current.path">
+		<path path="${base.dir}" />
+	</pathconvert>
+	<!-- 2.区切り文字を"/"から半角スペースに置換 -->
+	<pathconvert pathsep=" " dirsep="/" property="jar.classpath" refid="classpath">
+		<!-- ${classpath}のカレントディレクトリまでのパスを"."に置換 -->
+		<map from="${current.path}" to="${base.dir}" />
+	</pathconvert>
+
+	<!-- Jarファイル生成 -->
+	<target name="mycoloring">
+		<jar destfile="${build.jar}">
+			<fileset dir="${build.class}" />
+			<!-- 3.Jarファイル内に設定ファイルを格納する -->
+			<!--
+			<fileset dir="${build.lib}">
+				<include name="*.properties" />
+			</fileset>
+			 -->
+			<manifest>
+				<attribute name="Main-Class" value="${main}" />
+				<attribute name="Class-Path" value="${jar.classpath}" />
+			</manifest>
+		</jar>
+	</target>
+</project>

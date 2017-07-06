@@ -10,9 +10,10 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Calendar;
 import java.util.List;
-import java.util.Locale;
 import java.util.Properties;
-import java.util.TimeZone;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -45,19 +46,20 @@ public class FileDownload {
 	//
 	//  初回実行時はブラウザが起動し、Googleアカウントの選択、認証処理が必要。
 	//
-	// 【TODO】
-	//  https://developers.google.com/drive/v3/web/search-parameters
-	//    ・タイマーでダウンロードを実行する
-	//    ・前回実行日時以降に更新されたファアイルのみ対象とする
-	//
 	//
 	//---------------------------------------------------------------------------------------------
 
 	private static final Logger _logger = LogManager.getLogger();
 	private static final Properties _properties = new Properties();
 
+	private static SimpleDateFormat _fmtDateTime = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'");
+
 	/** ダウンロードフォルダ */
 	private static String _downloadDir;
+	/** ダウンロード実行間隔 */
+	private static long _downloadInterval;
+	/** 前回ダウンロード実行日時 */
+	private static String _lastExecDateTime = "2000-01-01T00:00:00.000Z";
 
 	/** アプリケーション名 */
 	private static final String APPLICATION_NAME = "AwesomeBase Photography File Download";
@@ -88,35 +90,51 @@ public class FileDownload {
 		}
 	}
 
+
 	public static void main(String[] args) throws IOException {
 		try {
-			_logger.info("FileDownload main...");
+			_logger.info("FileDownload main...START");
 
 			// 設定ファイル読み込み
 			_properties.load((new InputStreamReader(new FileInputStream("conf/photography.properties"), "UTF-8")));
 
-			// ダウンロードフォルダ
-			_downloadDir = _properties.getProperty("dir_download");
+			// 設定値の読み込み
+			_downloadDir = _properties.getProperty("download_dir");
+			_downloadInterval = Long.parseLong(_properties.getProperty("download_interval"));
+
 
 			// 承認された新しいAPIクライアントサービスを生成
 			Drive service = getDriveService();
 
-			List<File> files = retrieveAllFiles(service);
-			if (files == null || files.size() == 0) {
-				_logger.info("No files found.");
-			} else {
-				for (File file : files) {
-					_logger.debug(String.format("Get File: Name[%s] ID[%s] MimeType[%s] ModifiedTime[%s]", file.getName(), file.getId(), file.getMimeType(), file.getModifiedTime()));
-					// JPEGファイルのみダウンロード
-					if ("image/jpeg".equals(file.getMimeType())) {
-						fileDownload(service, file);
-					}
+			// スケジュール実行
+			ScheduledExecutorService scheduledExecutorService = Executors.newSingleThreadScheduledExecutor();
+			scheduledExecutorService.scheduleAtFixedRate(() -> {
+				try {
+					// ファイルダウンロード
+					fileDownload(service);
+				} catch (IOException e) {
+					_logger.error("*** System Error!! ***", e);
+					// スケジュール終了
+					scheduledExecutorService.shutdown();
 				}
-			}
+			}, 1, _downloadInterval, TimeUnit.SECONDS);
+
+			// ※shutdownを実行しない限り動き続ける
+			// scheduledExecutorService.shutdown();
 
 		} catch (Exception e) {
 			_logger.error("*** System Error!! ***", e);
 		}
+	}
+
+	/**
+	 * 承認されたドライブクライアントサービスの取得
+	 * @return
+	 * @throws IOException
+	 */
+	public static Drive getDriveService() throws IOException {
+		Credential credential = authorize();
+		return new Drive.Builder(HTTP_TRANSPORT, JSON_FACTORY, credential).setApplicationName(APPLICATION_NAME).build();
 	}
 
 	/**
@@ -138,17 +156,55 @@ public class FileDownload {
 	}
 
 	/**
-	 * 承認されたドライブクライアントサービスの取得
-	 * @return
+	 * Googleドライブからファイルをダウンロード
 	 * @throws IOException
 	 */
-	public static Drive getDriveService() throws IOException {
-		Credential credential = authorize();
-		return new Drive.Builder(HTTP_TRANSPORT, JSON_FACTORY, credential).setApplicationName(APPLICATION_NAME).build();
+	public static void fileDownload(Drive service) throws IOException {
+
+		// 今回実行日時を取得
+		String execDateTime = getCurrentDateFormat();
+
+		// ファイル一覧を取得
+		List<File> files = retrieveAllFiles(service);
+		if (files == null || files.size() == 0) {
+			_logger.info("No files found.");
+		} else {
+			for (File file : files) {
+				_logger.debug(String.format("Get File: Name[%s] ID[%s] MimeType[%s] ModifiedTime[%s]", file.getName(), file.getId(), file.getMimeType(), file.getModifiedTime()));
+
+				// JPEGファイルのみダウンロード
+				if ("image/jpeg".equals(file.getMimeType())) {
+					String fileName = _downloadDir + "/" + file.getName();
+
+					// ダウンロード済みの場合は処理を抜ける
+					java.io.File chk = new java.io.File(fileName);
+					if (chk.exists()) {
+						continue;
+					}
+
+					ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+					com.google.api.services.drive.Drive.Files.Get request = service.files().get(file.getId());
+					request.getMediaHttpDownloader().setProgressListener(new FileDownloadProgressListener());
+					request.executeMediaAndDownloadTo(outputStream);
+
+					FileOutputStream output = new FileOutputStream(fileName);
+					outputStream.writeTo(output);
+					output.flush();
+					output.close();
+					outputStream.close();
+
+					_logger.info("Save is Complete: " + file.getName());
+				}
+
+			}
+		}
+
+		// ダウンロード実行日時を更新
+		_lastExecDateTime = execDateTime;
 	}
 
 	/**
-	 * ファイルリソースのリストを取得する
+	 * Googleドライブ上のファイルリストを取得する
 	 * @param service
 	 * @return
 	 * @throws IOException
@@ -158,7 +214,8 @@ public class FileDownload {
 
 		// RootフォルダID
 		String rootId = service.files().get("root").setFields("id").execute().getId();
-		_logger.debug(String.format("Root Folder ID [%s]", rootId));
+		_logger.debug("Root Folder ID: " + rootId);
+		_logger.debug("Last Exec DateTime: " + _lastExecDateTime);
 
 		// 取得項目
 		String files = "nextPageToken, files(id, name, kind, size, mimeType, lastModifyingUser, modifiedTime, iconLink, owners, folderColorRgb, shared, webViewLink, webContentLink)";
@@ -169,6 +226,8 @@ public class FileDownload {
 		query.append("mimeType = 'image/jpeg' and mimeType != 'application/vnd.google-apps.folder'");// MIMEタイプを指定
 		query.append(" and ");
 		query.append("trashed = false");//削除されていない
+		query.append(" and ");
+		query.append("modifiedTime >= '" + _lastExecDateTime + "'");//更新日時が前回実行日時以降
 
 		// ファイル一覧を取得
 		com.google.api.services.drive.Drive.Files.List request = service.files().list()
@@ -191,47 +250,12 @@ public class FileDownload {
 	}
 
 	/**
-	 * Googleドライブからファイルをダウンロード
-	 * @param service
-	 * @param file
-	 * @throws IOException
-	 */
-	public static void fileDownload(Drive service, File file) throws IOException {
-
-		String fileName = _downloadDir + "/" + file.getName();
-
-		// ダウンロード済みの場合は処理を抜ける
-		java.io.File chk = new java.io.File(fileName);
-		if (chk.exists()) {
-			return;
-		}
-
-		_logger.info("Download File:" + file.getName());
-
-		ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
-		com.google.api.services.drive.Drive.Files.Get request = service.files().get(file.getId());
-		request.getMediaHttpDownloader().setProgressListener(new FileDownloadProgressListener());
-		request.executeMediaAndDownloadTo(outputStream);
-
-		FileOutputStream output = new FileOutputStream(fileName);
-		outputStream.writeTo(output);
-		output.flush();
-		output.close();
-		outputStream.close();
-
-		_logger.info("Save is Complete.");
-
-	}
-
-	/**
 	 * 現在日時を取得
 	 * @return
 	 */
 	private static String getCurrentDateFormat() {
-		SimpleDateFormat format = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US);
-		format.setTimeZone(TimeZone.getTimeZone("UTC"));
-
-		return format.format(Calendar.getInstance().getTime());
+		//_fmtDateTime.setTimeZone(TimeZone.getTimeZone("UTC"));
+		return _fmtDateTime.format(Calendar.getInstance().getTime());
 	}
 
 }
