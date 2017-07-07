@@ -89,6 +89,8 @@ public class FileDownload {
 	private static final String MIME_TYPE_FOLDER = "application/vnd.google-apps.folder";
 	/** MimeType : jpeg */
 	private static final String MIME_TYPE_JPEG = "image/jpeg";
+	/** MimeType : png */
+	private static final String MIME_TYPE_PNG = "image/png";
 
 
 	static {
@@ -187,9 +189,9 @@ public class FileDownload {
 		String fields = "nextPageToken, files(name, id, mimeType, modifiedTime, parents)";
 		// 取得条件
 		StringBuilder query = new StringBuilder();
-		query.append(String.format("'%s' in parents ", _rootFolderID));// 親フォルダを指定(root)
+		query.append(String.format("'%s' in parents", _rootFolderID));// 親フォルダを指定(root)
 		query.append(" and ");
-		query.append(String.format("mimeType = '%s'", MIME_TYPE_JPEG));// MIMEタイプを指定（JPEG）
+		query.append(String.format("(mimeType = '%s' or mimeType = '%s')", MIME_TYPE_JPEG, MIME_TYPE_PNG));// MIMEタイプを指定（JPEG or PNG）
 		query.append(" and ");
 		query.append("trashed = false");//削除されていない
 
@@ -201,26 +203,23 @@ public class FileDownload {
 			for (File file : files) {
 				_logger.debug(String.format("Get File: Name[%s] ID[%s] MimeType[%s] ModifiedTime[%s]", file.getName(), file.getId(), file.getMimeType(), file.getModifiedTime()));
 
-				// JPEGファイルのみダウンロード
-				if (MIME_TYPE_JPEG.equals(file.getMimeType())) {
-					String fileName = _downloadDir + "/" + file.getName();
+				// ダウンロード
+				ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+				com.google.api.services.drive.Drive.Files.Get request = service.files().get(file.getId());
+				request.getMediaHttpDownloader().setProgressListener(new FileDownloadProgressListener());
+				request.executeMediaAndDownloadTo(outputStream);
 
-					ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
-					com.google.api.services.drive.Drive.Files.Get request = service.files().get(file.getId());
-					request.getMediaHttpDownloader().setProgressListener(new FileDownloadProgressListener());
-					request.executeMediaAndDownloadTo(outputStream);
+				// 保存
+				FileOutputStream output = new FileOutputStream(_downloadDir + "/" + file.getName());
+				outputStream.writeTo(output);
+				output.flush();
+				output.close();
+				outputStream.close();
 
-					FileOutputStream output = new FileOutputStream(fileName);
-					outputStream.writeTo(output);
-					output.flush();
-					output.close();
-					outputStream.close();
+				_logger.info("Save is Complete: " + file.getName());
 
-					_logger.info("Save is Complete: " + file.getName());
-
-					// バックアップフォルダへ移動
-					fileBackup(service, file);
-				}
+				// バックアップフォルダへ移動
+				fileBackup(service, file);
 			}
 		}
 		return files;
@@ -264,7 +263,7 @@ public class FileDownload {
 		String fields = "nextPageToken, files(name, id)";
 		// 取得条件
 		StringBuilder query = new StringBuilder();
-		query.append(String.format("'%s' in parents ", _rootFolderID));// 親フォルダを指定(root)
+		query.append(String.format("'%s' in parents", _rootFolderID));// 親フォルダを指定(root)
 		query.append(" and ");
 		query.append("name = '" + bkFolderName + "'");//名前を指定（年月）
 		query.append(" and ");

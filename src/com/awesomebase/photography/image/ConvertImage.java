@@ -30,32 +30,32 @@ public class ConvertImage {
 
 	/**
 	 * 画像変換
-	 * @param driveFiles
+	 * @param downloadFiles
 	 * @throws Exception
 	 */
-	public static void convert(List<com.google.api.services.drive.model.File> driveFiles) throws Exception {
+	public static void convert(List<com.google.api.services.drive.model.File> downloadFiles) throws Exception {
 
 		// 設定ファイル読み込み
 		_properties.load((new InputStreamReader(new FileInputStream("conf/photography.properties"), "UTF-8")));
 		_resizeWidth = Integer.parseInt(_properties.getProperty("resize_width"));
 
-		//_logger.debug("Convert Files: " + driveFiles.stream().map(com.google.api.services.drive.model.File::getName).collect(Collectors.toList()).toString());
+		//_logger.debug("Convert Files: " + downloadFiles.stream().map(com.google.api.services.drive.model.File::getName).collect(Collectors.toList()).toString());
 
-		if (driveFiles != null && driveFiles.size() > 0) {
-			for (com.google.api.services.drive.model.File driveFile : driveFiles) {
+		if (downloadFiles != null && downloadFiles.size() > 0) {
+			for (com.google.api.services.drive.model.File driveFile : downloadFiles) {
 
-				// JPEGファイルを読み込む
-				File jpgFile = new File(_properties.getProperty("download_dir") + "/" + driveFile.getName());
-				BufferedImage bufimg = ImageIO.read(jpgFile);
+				// ファイル読み込み
+				File inFile = new File(_properties.getProperty("download_dir") + "/" + driveFile.getName());
+				BufferedImage bufimg = ImageIO.read(inFile);
 
 				// リサイズ
 				bufimg = resize(bufimg);
 
-				// PNGファイルに出力
-				File pngFile = new File(_properties.getProperty("convert_dir") + "/" + jpgFile.getName().replace(".jpg", ".png"));
-				ImageIO.write(bufimg, "png", pngFile);
+				// ファイル出力  ※「JPEG」の場合は「PNG」に変換される
+				File outFile = new File(_properties.getProperty("convert_dir") + "/" + inFile.getName().replace(".jpg", ".png"));
+				ImageIO.write(bufimg, "png", outFile);
 
-				_logger.info("Resize and Convert to PNG: " + pngFile.getAbsolutePath());
+				_logger.info("Resize and Convert to PNG: " + outFile.getAbsolutePath());
 			}
 
 		}
