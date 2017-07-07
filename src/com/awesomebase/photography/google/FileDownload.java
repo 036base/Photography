@@ -19,6 +19,7 @@ import java.util.concurrent.TimeUnit;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import com.awesomebase.photography.image.ConvertImage;
 import com.google.api.client.auth.oauth2.Credential;
 import com.google.api.client.extensions.java6.auth.oauth2.AuthorizationCodeInstalledApp;
 import com.google.api.client.extensions.jetty.auth.oauth2.LocalServerReceiver;
@@ -127,11 +128,16 @@ public class FileDownload {
 			scheduledExecutorService.scheduleAtFixedRate(() -> {
 				try {
 					// ファイルダウンロード
-					fileDownload(service);
-				} catch (IOException e) {
+					List<File> files = fileDownload(service);
+
+					// 画像変換
+					ConvertImage.convert(files);
+
+				} catch (Exception e) {
 					_logger.error("*** System Error!! ***", e);
 					// スケジュール終了
 					scheduledExecutorService.shutdown();
+					_logger.info("Scheduled Executor Service Shutdown.");
 				}
 			}, 1, _downloadInterval, TimeUnit.SECONDS);
 
@@ -175,7 +181,7 @@ public class FileDownload {
 	 * Googleドライブからファイルをダウンロード
 	 * @throws IOException
 	 */
-	public static void fileDownload(Drive service) throws IOException {
+	public static List<File> fileDownload(Drive service) throws IOException {
 
 		// 取得項目
 		String fields = "nextPageToken, files(name, id, mimeType, modifiedTime, parents)";
@@ -214,10 +220,10 @@ public class FileDownload {
 
 					// バックアップフォルダへ移動
 					fileBackup(service, file);
-
 				}
 			}
 		}
+		return files;
 	}
 
 	/**
@@ -298,6 +304,10 @@ public class FileDownload {
 	 * @throws IOException
 	 */
 	private static List<File> getDriveFiles(Drive service, String fields, String query) throws IOException {
+
+		_logger.debug("Get DriveFiles Fields:" + fields);
+		_logger.debug("Get DriveFiles Query:" + query);
+
 		List<File> result = new ArrayList<File>();
 
 		// ファイル一覧を取得
