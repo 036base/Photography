@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<project name="Processing" basedir="." default="mycoloring">
+<project name="Photography" basedir="." default="FileDownload">
 	<!-- Mainクラス -->
 	<property name="main" value="com.awesomebase.photography.google.FileDownload" />
 
@@ -35,7 +35,7 @@
 	</pathconvert>
 
 	<!-- Jarファイル生成 -->
-	<target name="mycoloring">
+	<target name="FileDownload">
 		<jar destfile="${build.jar}">
 			<fileset dir="${build.class}" />
 			<!-- 3.Jarファイル内に設定ファイルを格納する -->

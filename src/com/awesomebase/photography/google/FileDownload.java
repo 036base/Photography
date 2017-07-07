@@ -9,6 +9,7 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Calendar;
+import java.util.Collections;
 import java.util.List;
 import java.util.Properties;
 import java.util.concurrent.Executors;
@@ -52,14 +53,17 @@ public class FileDownload {
 	private static final Logger _logger = LogManager.getLogger();
 	private static final Properties _properties = new Properties();
 
-	private static SimpleDateFormat _fmtDateTime = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'");
-
 	/** ダウンロードフォルダ */
 	private static String _downloadDir;
 	/** ダウンロード実行間隔 */
 	private static long _downloadInterval;
-	/** 前回ダウンロード実行日時 */
-	private static String _lastExecDateTime = "2000-01-01T00:00:00.000Z";
+
+	/** ルートフォルダID */
+	private static String _rootFolderID;
+	/** バックアップフォルダ名 */
+	private static String _backupFolderName;
+	/** バックアップフォルダD */
+	private static String _backupFolderID;
 
 	/** アプリケーション名 */
 	private static final String APPLICATION_NAME = "AwesomeBase Photography File Download";
@@ -80,6 +84,12 @@ public class FileDownload {
 	private static final List<String> SCOPES = Arrays.asList(DriveScopes.DRIVE);
 
 
+	/** MimeType : folder */
+	private static final String MIME_TYPE_FOLDER = "application/vnd.google-apps.folder";
+	/** MimeType : jpeg */
+	private static final String MIME_TYPE_JPEG = "image/jpeg";
+
+
 	static {
 		try {
 			HTTP_TRANSPORT = GoogleNetHttpTransport.newTrustedTransport();
@@ -97,7 +107,6 @@ public class FileDownload {
 
 			// 設定ファイル読み込み
 			_properties.load((new InputStreamReader(new FileInputStream("conf/photography.properties"), "UTF-8")));
-
 			// 設定値の読み込み
 			_downloadDir = _properties.getProperty("download_dir");
 			_downloadInterval = Long.parseLong(_properties.getProperty("download_interval"));
@@ -105,6 +114,13 @@ public class FileDownload {
 
 			// 承認された新しいAPIクライアントサービスを生成
 			Drive service = getDriveService();
+
+			// ルートフォルダID取得
+			_rootFolderID = service.files().get("root").setFields("id").execute().getId();
+			_logger.debug("Root Folder ID: " + _rootFolderID);
+
+			// バックアップフォルダ作成
+			createBackupFolder(service);
 
 			// スケジュール実行
 			ScheduledExecutorService scheduledExecutorService = Executors.newSingleThreadScheduledExecutor();
@@ -161,11 +177,18 @@ public class FileDownload {
 	 */
 	public static void fileDownload(Drive service) throws IOException {
 
-		// 今回実行日時を取得
-		String execDateTime = getCurrentDateFormat();
+		// 取得項目
+		String fields = "nextPageToken, files(name, id, mimeType, modifiedTime, parents)";
+		// 取得条件
+		StringBuilder query = new StringBuilder();
+		query.append(String.format("'%s' in parents ", _rootFolderID));// 親フォルダを指定(root)
+		query.append(" and ");
+		query.append(String.format("mimeType = '%s'", MIME_TYPE_JPEG));// MIMEタイプを指定（JPEG）
+		query.append(" and ");
+		query.append("trashed = false");//削除されていない
 
 		// ファイル一覧を取得
-		List<File> files = retrieveAllFiles(service);
+		List<File> files = getDriveFiles(service, fields, query.toString());
 		if (files == null || files.size() == 0) {
 			_logger.info("No files found.");
 		} else {
@@ -173,14 +196,8 @@ public class FileDownload {
 				_logger.debug(String.format("Get File: Name[%s] ID[%s] MimeType[%s] ModifiedTime[%s]", file.getName(), file.getId(), file.getMimeType(), file.getModifiedTime()));
 
 				// JPEGファイルのみダウンロード
-				if ("image/jpeg".equals(file.getMimeType())) {
+				if (MIME_TYPE_JPEG.equals(file.getMimeType())) {
 					String fileName = _downloadDir + "/" + file.getName();
-
-					// ダウンロード済みの場合は処理を抜ける
-					java.io.File chk = new java.io.File(fileName);
-					if (chk.exists()) {
-						continue;
-					}
 
 					ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
 					com.google.api.services.drive.Drive.Files.Get request = service.files().get(file.getId());
@@ -194,47 +211,100 @@ public class FileDownload {
 					outputStream.close();
 
 					_logger.info("Save is Complete: " + file.getName());
-				}
 
+					// バックアップフォルダへ移動
+					fileBackup(service, file);
+
+				}
 			}
 		}
+	}
 
-		// ダウンロード実行日時を更新
-		_lastExecDateTime = execDateTime;
+	/**
+	 * バックアップフォルダへ移動
+	 * @param service
+	 * @param file
+	 */
+	private static void fileBackup(Drive service, File file) throws IOException {
+
+		// 既存の親フォルダを取得
+		StringBuilder previousParents = new StringBuilder();
+		for (String parent : file.getParents()) {
+			previousParents.append(parent);
+			previousParents.append(',');
+		}
+		// 親フォルダを変更してファイルを更新
+		service.files().update(file.getId(), null)
+				.setAddParents(_backupFolderID)
+				.setRemoveParents(previousParents.toString())
+				.setFields("id, name, mimeType, modifiedTime, parents")
+				.execute();
+
+		_logger.debug("Backup to: " + _backupFolderName);
+	}
+
+	/**
+	 * Googleドライブ上にバックアップフォルダ作成
+	 * @param service
+	 * @return
+	 * @throws IOException
+	 */
+	private static void createBackupFolder(Drive service) throws IOException {
+
+		// バックアップフォルダ名（年月単位）
+		String bkFolderName = (new SimpleDateFormat("yyyyMM")).format(Calendar.getInstance().getTime());
+
+		// 取得項目
+		String fields = "nextPageToken, files(name, id)";
+		// 取得条件
+		StringBuilder query = new StringBuilder();
+		query.append(String.format("'%s' in parents ", _rootFolderID));// 親フォルダを指定(root)
+		query.append(" and ");
+		query.append("name = '" + bkFolderName + "'");//名前を指定（年月）
+		query.append(" and ");
+		query.append(String.format("mimeType = '%s'", MIME_TYPE_FOLDER) );// MIMEタイプを指定（フォルダ）
+		query.append(" and ");
+		query.append("trashed = false");//削除されていない
+
+		// ファイル一覧を取得
+		List<File> files = getDriveFiles(service, fields, query.toString());
+		if (files == null || files.size() == 0) {
+			// バックアップフォルダ作成
+			File fileMetadata = new File();
+			fileMetadata.setName(bkFolderName);
+			fileMetadata.setMimeType(MIME_TYPE_FOLDER);
+			fileMetadata.setParents(Collections.singletonList(_rootFolderID));
+			File file = service.files().create(fileMetadata).setFields("name, id, mimeType, modifiedTime, parents").execute();
+			_backupFolderName = file.getName();
+			_backupFolderID = file.getId();
+			_logger.info(String.format("Create Backup Folder: %s [%s]", file.getName(), file.getId()));
+		} else {
+			// バックアップフォルダ名、ID取得
+			for (File file : files) {
+				_logger.info(String.format("Get Backup Folder: %s [%s]", file.getName(), file.getId()));
+				_backupFolderName = file.getName();
+				_backupFolderID = file.getId();
+				break;
+			}
+		}
 	}
 
 	/**
 	 * Googleドライブ上のファイルリストを取得する
 	 * @param service
+	 * @param fields
+	 * @param query
 	 * @return
 	 * @throws IOException
 	 */
-	private static List<File> retrieveAllFiles(Drive service) throws IOException {
+	private static List<File> getDriveFiles(Drive service, String fields, String query) throws IOException {
 		List<File> result = new ArrayList<File>();
-
-		// RootフォルダID
-		String rootId = service.files().get("root").setFields("id").execute().getId();
-		_logger.debug("Root Folder ID: " + rootId);
-		_logger.debug("Last Exec DateTime: " + _lastExecDateTime);
-
-		// 取得項目
-		String files = "nextPageToken, files(id, name, kind, size, mimeType, lastModifyingUser, modifiedTime, iconLink, owners, folderColorRgb, shared, webViewLink, webContentLink)";
-		// 取得条件
-		StringBuilder query = new StringBuilder();
-		query.append("'" + rootId + "' in parents");// 親フォルダを指定(root)
-		query.append(" and ");
-		query.append("mimeType = 'image/jpeg' and mimeType != 'application/vnd.google-apps.folder'");// MIMEタイプを指定
-		query.append(" and ");
-		query.append("trashed = false");//削除されていない
-		query.append(" and ");
-		query.append("modifiedTime >= '" + _lastExecDateTime + "'");//更新日時が前回実行日時以降
 
 		// ファイル一覧を取得
 		com.google.api.services.drive.Drive.Files.List request = service.files().list()
-				.setPageSize(10)			// ページングサイズを指定
-				.setFields(files)			// 取得する項目を指定
-				.setQ(query.toString());	// 取得条件;
-
+				.setPageSize(10)	// ページングサイズ
+				.setFields(fields)	// 取得項目
+				.setQ(query);		// 取得条件
 		do {
 			try {
 				FileList fileList = request.execute();
@@ -247,15 +317,6 @@ public class FileDownload {
 		} while (request.getPageToken() != null && request.getPageToken().length() > 0);
 
 		return result;
-	}
-
-	/**
-	 * 現在日時を取得
-	 * @return
-	 */
-	private static String getCurrentDateFormat() {
-		//_fmtDateTime.setTimeZone(TimeZone.getTimeZone("UTC"));
-		return _fmtDateTime.format(Calendar.getInstance().getTime());
 	}
 
 }

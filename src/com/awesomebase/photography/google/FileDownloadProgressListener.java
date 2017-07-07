@@ -19,10 +19,10 @@ public class FileDownloadProgressListener implements MediaHttpDownloaderProgress
 	public void progressChanged(MediaHttpDownloader downloader) {
 		switch (downloader.getDownloadState()) {
 		case MEDIA_IN_PROGRESS:
-			_logger.info("Download is in progress: " + downloader.getProgress());
+			_logger.debug("Download is in progress: " + downloader.getProgress());
 			break;
 		case MEDIA_COMPLETE:
-			_logger.info("Download is Complete.");
+			_logger.debug("Download is Complete.");
 			break;
 		default:
 			break;
