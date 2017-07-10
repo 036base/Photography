@@ -42,8 +42,9 @@ public class ConvertImage {
 		//_logger.debug("Convert Files: " + downloadFiles.stream().map(com.google.api.services.drive.model.File::getName).collect(Collectors.toList()).toString());
 
 		if (downloadFiles != null && downloadFiles.size() > 0) {
-			for (com.google.api.services.drive.model.File driveFile : downloadFiles) {
 
+			_logger.info("Convert Folder: " + _properties.getProperty("convert_dir"));
+			for (com.google.api.services.drive.model.File driveFile : downloadFiles) {
 				// ファイル読み込み
 				File inFile = new File(_properties.getProperty("download_dir") + "/" + driveFile.getName());
 				BufferedImage bufimg = ImageIO.read(inFile);
@@ -55,7 +56,7 @@ public class ConvertImage {
 				File outFile = new File(_properties.getProperty("convert_dir") + "/" + inFile.getName().replace(".jpg", ".png"));
 				ImageIO.write(bufimg, "png", outFile);
 
-				_logger.info("Resize and Convert: " + outFile.getAbsolutePath());
+				_logger.info("Resize and Convert: " + outFile.getName());
 			}
 
 		}

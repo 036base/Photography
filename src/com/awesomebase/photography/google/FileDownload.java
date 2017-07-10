@@ -114,6 +114,8 @@ public class FileDownload {
 			_downloadDir = _properties.getProperty("download_dir");
 			_downloadInterval = Long.parseLong(_properties.getProperty("download_interval"));
 
+			_logger.info("Download Folder:" + _downloadDir);
+			_logger.info("Download Interval:" + _downloadInterval);
 
 			// 承認された新しいAPIクライアントサービスを生成
 			Drive service = getDriveService();
