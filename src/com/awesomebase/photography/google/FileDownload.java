@@ -219,7 +219,7 @@ public class FileDownload {
 				_logger.info("Save is Complete: " + file.getName());
 
 				// バックアップフォルダへ移動
-//				fileBackup(service, file);
+				fileBackup(service, file);
 			}
 		}
 		return files;
