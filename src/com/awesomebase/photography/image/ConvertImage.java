@@ -55,7 +55,7 @@ public class ConvertImage {
 				File outFile = new File(_properties.getProperty("convert_dir") + "/" + inFile.getName().replace(".jpg", ".png"));
 				ImageIO.write(bufimg, "png", outFile);
 
-				_logger.info("Resize and Convert to PNG: " + outFile.getAbsolutePath());
+				_logger.info("Resize and Convert: " + outFile.getAbsolutePath());
 			}
 
 		}

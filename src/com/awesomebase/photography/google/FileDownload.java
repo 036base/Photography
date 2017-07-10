@@ -106,7 +106,7 @@ public class FileDownload {
 
 	public static void main(String[] args) throws IOException {
 		try {
-			_logger.info("FileDownload main...START");
+			_logger.info("{} start...", Thread.currentThread().getStackTrace()[1].getClassName());
 
 			// 設定ファイル読み込み
 			_properties.load((new InputStreamReader(new FileInputStream("conf/photography.properties"), "UTF-8")));
@@ -174,7 +174,7 @@ public class FileDownload {
 		GoogleAuthorizationCodeFlow flow = new GoogleAuthorizationCodeFlow.Builder(HTTP_TRANSPORT, JSON_FACTORY, clientSecrets, SCOPES).setDataStoreFactory(DATA_STORE_FACTORY).setAccessType("offline").build();
 		Credential credential = new AuthorizationCodeInstalledApp(flow, new LocalServerReceiver()).authorize("user");
 
-		_logger.info("Credentials saved to " + DATA_STORE_DIR.getAbsolutePath());
+		_logger.debug("Credentials saved to " + DATA_STORE_DIR.getAbsolutePath());
 
 		return credential;
 	}
@@ -219,7 +219,7 @@ public class FileDownload {
 				_logger.info("Save is Complete: " + file.getName());
 
 				// バックアップフォルダへ移動
-				fileBackup(service, file);
+//				fileBackup(service, file);
 			}
 		}
 		return files;
@@ -282,11 +282,11 @@ public class FileDownload {
 			File file = service.files().create(fileMetadata).setFields("name, id, mimeType, modifiedTime, parents").execute();
 			_backupFolderName = file.getName();
 			_backupFolderID = file.getId();
-			_logger.info(String.format("Create Backup Folder: %s [%s]", file.getName(), file.getId()));
+			_logger.debug(String.format("Create Backup Folder: %s [%s]", file.getName(), file.getId()));
 		} else {
 			// バックアップフォルダ名、ID取得
 			for (File file : files) {
-				_logger.info(String.format("Get Backup Folder: %s [%s]", file.getName(), file.getId()));
+				_logger.debug(String.format("Get Backup Folder: %s [%s]", file.getName(), file.getId()));
 				_backupFolderName = file.getName();
 				_backupFolderID = file.getId();
 				break;
